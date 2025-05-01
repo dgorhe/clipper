@@ -16,6 +16,10 @@ import logging
 from subprocess import call
 import clipper
 import pybedtools
+from tqdm import tqdm
+from collections import defaultdict
+from pdb import set_trace
+
 
 def check_for_index(bamfile):
     """
@@ -43,6 +47,7 @@ def check_for_index(bamfile):
 
 ####################### LENGTHS #####################################
 
+
 def build_transcript_data_gtf_as_structure(species, pre_mrna, data_dir=''):
     """
     calculate effective length for each transcript from pre-created gtf file in clipper/data
@@ -54,10 +59,11 @@ def build_transcript_data_gtf_as_structure(species, pre_mrna, data_dir=''):
 
     """
     bedtool_intervals = []
-    #x = clipper.data_file(species + ".AS.STRUCTURE.COMPILED.gff")
-    x=os.path.join(data_dir, species + ".AS.STRUCTURE.COMPILED.gff")
+    # x = clipper.data_file(species + ".AS.STRUCTURE.COMPILED.gff")
+    x = os.path.join(data_dir, species + ".AS.STRUCTURE.COMPILED.gff")
     gtf_file = pybedtools.BedTool(x)
-    for gene in gtf_file:
+
+    for gene in tqdm(gtf_file, total=gtf_file.count()):
         effective_length = gene.attrs['premrna_length'] if pre_mrna else gene.attrs['mrna_length']
         attrs = "gene_id=%s;" % (gene.attrs['gene_id'])
         if "transcript_ids" in gene.attrs:
@@ -65,15 +71,17 @@ def build_transcript_data_gtf_as_structure(species, pre_mrna, data_dir=''):
         attrs += "effective_length=%s" % (str(effective_length))
 
         # add to bedtool_intervals
-        to_string = map(str, [gene['chrom'],"AS_STRUCTURE","mRNA",str(gene.start + 1),str(gene.stop + 1),"0",gene['strand'],".",attrs]) # map object
+        to_string = map(str, [gene['chrom'], "AS_STRUCTURE", "mRNA", str(gene.start + 1),
+                        str(gene.stop + 1), "0", gene['strand'], ".", attrs])  # map object
         bedtool_intervals.append(pybedtools.create_interval_from_list(list(to_string)))
 
-
     return pybedtools.BedTool(bedtool_intervals)
+
 
 def get_exon_bed(species, data_dir=''):
     short_species = species.split("_")[0]
     return os.path.join(data_dir, "regions", "%s_%s.bed" % (short_species, "exons"))
+
 
 def write_peak_bedtool_string(cluster):
     """
@@ -95,6 +103,8 @@ def write_peak_bedtool_string(cluster):
     return cluster_bedtool_string
 
 ################################ DEPRECATED UNUSED ###############################################
+
+
 def build_geneinfo(bed):
     """
     Loads bed file into a dictionary with the key being the name and a string being the value
@@ -181,7 +191,7 @@ def add_species(species, chrs, bed, mrna, premrna):
     return par
 
 
-def build_transcript_data(species, gene_bed, gene_mrna, gene_pre_mrna, pre_mrna, data_dir = ''):
+def build_transcript_data(species, gene_bed, gene_mrna, gene_pre_mrna, pre_mrna, data_dir=''):
     """
 
     Generates transcript data structures to call peaks on
@@ -215,9 +225,9 @@ def build_transcript_data(species, gene_bed, gene_mrna, gene_pre_mrna, pre_mrna,
             gene_bed = os.path.join(data_dir, species + ".AS.STRUCTURE_genes.BED.gz")
             gene_mrna = os.path.join(data_dir, species + ".AS.STRUCTURE_mRNA.lengths")
             gene_pre_mrna = os.path.join(data_dir, species + ".AS.STRUCTURE_premRNA.lengths")
-            #gene_bed = clipper.data_file(species + ".AS.STRUCTURE_genes.BED.gz")
-            #gene_mrna = clipper.data_file(species + ".AS.STRUCTURE_mRNA.lengths")
-            #gene_pre_mrna = clipper.data_file(species + ".AS.STRUCTURE_premRNA.lengths")
+            # gene_bed = clipper.data_file(species + ".AS.STRUCTURE_genes.BED.gz")
+            # gene_mrna = clipper.data_file(species + ".AS.STRUCTURE_mRNA.lengths")
+            # gene_pre_mrna = clipper.data_file(species + ".AS.STRUCTURE_premRNA.lengths")
 
         except ValueError:
             raise ValueError(
@@ -231,7 +241,7 @@ def build_transcript_data(species, gene_bed, gene_mrna, gene_pre_mrna, pre_mrna,
         lenfile = gene_mrna
 
     if lenfile is None:
-        raise IOError("""didn't pass correct mRNA length file option 
+        raise IOError("""didn't pass correct mRNA length file option
                     with given length file""")
 
     # builds dict to do processing on,

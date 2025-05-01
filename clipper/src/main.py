@@ -22,8 +22,10 @@ import os
 import pickle
 from optparse import OptionParser
 import logging
+from tqdm import tqdm
 
 logging.captureWarnings(True)
+
 
 def main(options):
     """
@@ -51,11 +53,12 @@ def main(options):
     #    # TODO always False - no longer an option
     #   bedtool = build_transcript_data_gtf(pybedtools.BedTool(options.gtfFile), options.premRNA, , data_dir=options.datadir)
     # else:
-    bedtool = build_transcript_data_gtf_as_structure(options.species, options.premRNA, data_dir=options.datadir).saveas()
+    bedtool = build_transcript_data_gtf_as_structure(
+        options.species, options.premRNA, data_dir=options.datadir).saveas()
 
     # gets a bedtool of all genes to call peaks on
     if options.gene:
-        bedtool = bedtool.filter(lambda x: x.attrs['gene_id'].split('.')[0] in options.gene).saveas()  ### bug
+        bedtool = bedtool.filter(lambda x: x.attrs['gene_id'].split('.')[0] in options.gene).saveas()  # bug
 
     # options.maxgenes   # truncates for max bedtool
     if options.maxgenes:
@@ -101,19 +104,23 @@ def main(options):
     else:
         jobs = [pool.apply_async(call_peaks, task) for task in tasks]
 
+        # Add progress bar
+        pbar = tqdm(total=len(jobs), desc="Processing genes", unit="gene")
+
         for job, task in zip(jobs, tasks):
             try:
                 peaks_dicts.append(job.get(timeout=options.timeout))
+                pbar.update(1)
             except multiprocessing.TimeoutError as error:
-                print()
-
+                print(error)
                 logging.error("gene %s timed out after %s minutes on bedinterval: %s" % (
-                task[0].attrs['gene_id'], options.timeout / 60, task[0]))
+                    task[0].attrs['gene_id'], options.timeout / 60, task[0]))
+                pbar.update(1)  # Update progress even for failed tasks
 
+        pbar.close()
 
     pool.close()
     logging.info("finished call_peaks on all genes")
-
 
     ################### FILTER PEAK BY READ #################################
     logging.info(" starting adding up transcriptome-wise reads")
@@ -137,7 +144,7 @@ def main(options):
 
     ############### WRITE TO FILE #####################################
 
-    if type(filtered_peak_bedtool_tsv) == str:
+    if isinstance(filtered_peak_bedtool_tsv, str):
         with open(options.outfileF + ".tsv", 'w') as tsvfile:
             tsvfile.write("Nothing here.")
         # filtered_peak_bedtool_dataframe.to_csv(tsvfile, sep = '\t')
@@ -148,6 +155,7 @@ def main(options):
             # TODO Can't pickle save after filtering ? as we have a tsv now, not a peaks_dicts list !?
             pickle.dump(peaks_dicts, file=f)
 
+
 def option_parser():
     ''' return parser
     :return: OptionParser object
@@ -156,10 +164,10 @@ def option_parser():
         THIS IS CLIPPER FOR ECLIP VERSION 2.1.2
         clipper -b YOUR_BAM_FILE.bam -o YOUR_OUT_FILE.bed -s hg19 """
     description = """CLIPper. Michael Lovci, Gabriel Pratt 2012, Hsuan-lin Her 2020.
-                         CLIP peakfinder that uses fitted smoothing splines to 
+                         CLIP peakfinder that uses fitted smoothing splines to
                          define clusters of binding.  Computation is performed in
-                         parallel using parallelPython. 
-                         Refer to: https://github.com/YeoLab/clipper/ for instructions. 
+                         parallel using parallelPython.
+                         Refer to: https://github.com/YeoLab/clipper/ for instructions.
                          Questions should be directed to hsher@ucsd.edu"""
     parser = OptionParser(usage=usage, description=description)
 
@@ -211,8 +219,9 @@ def option_parser():
     parser.add_option("--timeout", dest="timeout", default=None, type=int,
                       help="adds timeout (in seconds) to genes that take too long (useful for debugging only, or if you don't care about higly expressed genes)")
     parser.add_option("--datadir", dest="datadir", default=clipper.data_dir(), type=str,
-                      help="folder DATADIR that stores DATADIR/*AS.STRUCTURE.gff and the DATADIR/regions/*.bed.") #TODO find a default place to store
+                      help="folder DATADIR that stores DATADIR/*AS.STRUCTURE.gff and the DATADIR/regions/*.bed.")  # TODO find a default place to store
     return parser
+
 
 def override_options(options):
     ''' override some options (gtfFile, premRNA, method, SloP, bonferroni, algorithm) are removed and are added here
@@ -238,6 +247,7 @@ def override_options(options):
 
     return options
 
+
 def call_main():
     """
     Command line interface
@@ -247,9 +257,16 @@ def call_main():
     (options, args) = parser.parse_args()
 
     ##########################################################################
-    # logfile = options.outfileF + '.log'
-    # logging.basicConfig(filename=logfile ,level=logging.DEBUG)
-    # logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    logfile = options.outfileF + '.log'
+    logging.basicConfig(
+        filename=logfile,
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    # Add console handler to also show logs in stdout
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    logging.getLogger().addHandler(console_handler)
     ##########################################################################
 
     # override some old options
